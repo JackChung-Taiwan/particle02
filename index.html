@@ -11,67 +11,66 @@
     <style>
         body { margin: 0; overflow: hidden; background-color: #020105; font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif; }
         canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
-        #input_video { display: none; }
+        
+        /* --- 修改後的右下角鏡頭樣式 --- */
+        #input_video { 
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 160px; /* 視窗寬度 */
+            height: 120px; /* 視窗高度 */
+            z-index: 30;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.5), 0 0 5px rgba(255, 255, 255, 0.2);
+            object-fit: cover;
+            /* 鏡像翻轉，讓使用者動作與畫面一致 */
+            transform: scaleX(-1);
+            background-color: #000;
+        }
+
         #loading {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             color: rgba(255,255,255,0.6); font-size: 18px; z-index: 10;
             text-shadow: 0 0 10px rgba(255,255,255,0.5);
         }
 
-        /* --- 新增底部文字樣式 --- */
         #footer-text {
             position: absolute;
-            bottom: 30px; /* 距離底部的位置 */
+            bottom: 30px;
             left: 50%;
-            transform: translateX(-50%); /* 水平居中 */
-            z-index: 20; /* 確保在 Canvas 之上 */
-            font-size: 24px; /* 文字大小 */
-            font-weight: 700; /* 粗體 */
-            white-space: nowrap; /* 防止換行 */
-            pointer-events: none; /* 讓滑鼠事件穿透文字，不影響後方互動 */
+            transform: translateX(-50%);
+            z-index: 20;
+            font-size: 24px;
+            font-weight: 700;
+            white-space: nowrap;
+            pointer-events: none;
             letter-spacing: 1px;
         }
 
         .gold-text {
-            color: #FFD700; /* 金色 */
-            text-shadow: 0 2px 10px rgba(255, 215, 0, 0.5); /* 金色光暈 */
+            color: #FFD700;
+            text-shadow: 0 2px 10px rgba(255, 215, 0, 0.5);
         }
 
         .separator {
-            color: rgba(255, 255, 255, 0.8); /* 分隔符號用稍微透明的白色 */
+            color: rgba(255, 255, 255, 0.8);
             margin: 0 8px;
             font-weight: 300;
         }
 
-        /* 彩虹文字特效關鍵 CSS */
         .rainbow-text {
-            /* 定義線性漸層背景：紅->橙->黃->綠->藍->紫 */
             background-image: linear-gradient(to right, #ff3333, #ff9933, #ffff33, #33ff33, #3399ff, #cc33ff);
-            /* 將背景裁剪為文字形狀 (Webkit 瀏覽器需要前綴) */
             -webkit-background-clip: text;
             background-clip: text;
-            /* 將文字本身顏色設為透明，透出背景 */
             color: transparent;
-            /* 添加一點濾鏡光暈讓霓虹感更強 */
             filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.4));
-            /* 選用：如果想要彩虹流動，可以取消下面註解 */
-            /* background-size: 200% auto;
-            animation: rainbow-flow 5s linear infinite;
-            */
         }
-        /*
-        @keyframes rainbow-flow {
-            0% { background-position: 0% center; }
-            100% { background-position: 200% center; }
-        }
-        */
 
-        /* 針對小螢幕的調整 */
         @media (max-width: 600px) {
-            #footer-text {
-                font-size: 16px;
-                bottom: 20px;
-            }
+            #footer-text { font-size: 16px; bottom: 20px; }
+            /* 手機版縮小鏡頭 */
+            #input_video { width: 100px; height: 75px; bottom: 10px; right: 10px; }
         }
     </style>
 </head>
@@ -87,9 +86,7 @@
     <span class="rainbow-text">體感互動藝術</span>
 </div>
 
-
 <script>
-// ... (JavaScript 部分保持完全不變) ...
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const loadingDiv = document.getElementById('loading');
@@ -124,7 +121,6 @@ class Strand {
         this.nodes = [];
         this.hue = hue;
         this.color = `hsla(${hue}, 100%, 70%, 0.85)`; 
-        
         this.segmentLength = length / segmentCount;
         for (let i = 0; i < segmentCount; i++) {
             const y = 50 + i * this.segmentLength;
@@ -152,7 +148,6 @@ class Strand {
                 let force = (interactionRadius - dist) / interactionRadius;
                 n.x += (dx / dist) * force * 18;
                 n.y += (dy / dist) * force * 18;
-
                 if (Math.random() < 0.025) {
                     spawnParticles(n.x, n.y, this.hue, 1);
                 }
@@ -203,11 +198,6 @@ class Particle {
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
         ctx.fill();
-
-        ctx.fillStyle = `hsla(${this.hue}, 100%, 70%, ${alpha * 0.2})`;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.r * 1.8, 0, Math.PI * 2);
-        ctx.fill();
     }
 }
 
@@ -220,7 +210,6 @@ function initStrands() {
     const totalStrands = Math.floor((width - 80) / gap);
     const strandLen = height * 0.75; 
     const segments = 24;
-
     let x = 40;
     for (let i = 0; i < totalStrands; i++) {
         const hue = (x / width) * 340;
@@ -261,7 +250,6 @@ function animate() {
     if (isHandDetected) {
         currentMouse.x += (targetMouse.x - currentMouse.x) * SMOOTHING_FACTOR;
         currentMouse.y += (targetMouse.y - currentMouse.y) * SMOOTHING_FACTOR;
-        
         ctx.globalCompositeOperation = 'lighter';
         ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
         ctx.beginPath();
