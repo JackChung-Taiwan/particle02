@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vibrant Neon Strings - 品牌展示版</title>
+    <title>Vibrant Neon Strings - 雙手互動版</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -12,21 +12,11 @@
         body { margin: 0; overflow: hidden; background-color: #020105; font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif; }
         canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
         
-        /* --- 修改後的右下角鏡頭樣式 --- */
         #input_video { 
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            width: 160px; /* 視窗寬度 */
-            height: 120px; /* 視窗高度 */
-            z-index: 30;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-radius: 12px;
+            position: absolute; bottom: 20px; right: 20px; width: 160px; height: 120px; z-index: 30;
+            border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 12px;
             box-shadow: 0 0 15px rgba(0, 0, 0, 0.5), 0 0 5px rgba(255, 255, 255, 0.2);
-            object-fit: cover;
-            /* 鏡像翻轉，讓使用者動作與畫面一致 */
-            transform: scaleX(-1);
-            background-color: #000;
+            object-fit: cover; transform: scaleX(-1); background-color: #000;
         }
 
         #loading {
@@ -36,47 +26,27 @@
         }
 
         #footer-text {
-            position: absolute;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 20;
-            font-size: 24px;
-            font-weight: 700;
-            white-space: nowrap;
-            pointer-events: none;
-            letter-spacing: 1px;
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 20;
+            font-size: 24px; font-weight: 700; white-space: nowrap; pointer-events: none; letter-spacing: 1px;
         }
 
-        .gold-text {
-            color: #FFD700;
-            text-shadow: 0 2px 10px rgba(255, 215, 0, 0.5);
-        }
-
-        .separator {
-            color: rgba(255, 255, 255, 0.8);
-            margin: 0 8px;
-            font-weight: 300;
-        }
-
+        .gold-text { color: #FFD700; text-shadow: 0 2px 10px rgba(255, 215, 0, 0.5); }
+        .separator { color: rgba(255, 255, 255, 0.8); margin: 0 8px; font-weight: 300; }
         .rainbow-text {
             background-image: linear-gradient(to right, #ff3333, #ff9933, #ffff33, #33ff33, #3399ff, #cc33ff);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
+            -webkit-background-clip: text; background-clip: text; color: transparent;
             filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.4));
         }
 
         @media (max-width: 600px) {
             #footer-text { font-size: 16px; bottom: 20px; }
-            /* 手機版縮小鏡頭 */
             #input_video { width: 100px; height: 75px; bottom: 10px; right: 10px; }
         }
     </style>
 </head>
 <body>
 
-<div id="loading">正在啟動鮮明光效...</div>
+<div id="loading">正在啟動雙手偵測...</div>
 <video id="input_video"></video>
 <canvas id="canvas"></canvas>
 
@@ -101,18 +71,34 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
-const targetMouse = { x: -1000, y: -1000 };
-const currentMouse = { x: -1000, y: -1000 };
-const SMOOTHING_FACTOR = 0.1; 
-let isHandDetected = false;
+// --- 修改重點：支援多手追蹤 ---
+// 使用陣列來儲存每一隻手的狀態
+// 結構: { target: {x, y}, current: {x, y}, active: boolean }
+const MAX_HANDS = 2;
+let handTrackers = [];
+const SMOOTHING_FACTOR = 0.15; // 稍微調快一點反應速度
+
+// 初始化手部追蹤器
+for(let i=0; i<MAX_HANDS; i++) {
+    handTrackers.push({
+        target: { x: -1000, y: -1000 },
+        current: { x: -1000, y: -1000 },
+        active: false
+    });
+}
 
 const randomRange = (min, max) => Math.random() * (max - min) + min;
+
+// 斷裂參數
+const BREAK_THRESHOLD_MULTIPLIER = 5.0; 
+const HEAL_TIME_FRAMES = 120; 
 
 class Node {
     constructor(x, y) {
         this.x = x; this.y = y;
         this.ox = x; this.oy = y;
         this.pinned = false;
+        this.breakTimer = 0; 
     }
 }
 
@@ -131,34 +117,64 @@ class Strand {
     }
 
     update() {
-        for (let n of this.nodes) {
+        for (let i = 0; i < this.nodes.length; i++) {
+            let n = this.nodes[i];
+            
+            if (n.breakTimer > 0) n.breakTimer--;
             if (n.pinned) continue;
+
             let vx = (n.x - n.ox) * 0.96; 
             let vy = (n.y - n.oy) * 0.96;
+            
+            if (i > 0 && this.nodes[i-1].breakTimer > 0) {
+                vx *= 0.98; vy *= 0.98;
+            }
+
             n.ox = n.x; n.oy = n.y;
             n.y += vy + 0.35; 
             n.x += vx;
 
-            let dx = n.x - currentMouse.x;
-            let dy = n.y - currentMouse.y;
-            let dist = Math.hypot(dx, dy);
+            // --- 修改重點：多手互動迴圈 ---
+            // 檢查每一個啟動的手部追蹤器
+            for (let h = 0; h < MAX_HANDS; h++) {
+                if (!handTrackers[h].active) continue;
+                
+                let handX = handTrackers[h].current.x;
+                let handY = handTrackers[h].current.y;
 
-            const interactionRadius = 65;
-            if (dist < interactionRadius && dist > 0.001) { 
-                let force = (interactionRadius - dist) / interactionRadius;
-                n.x += (dx / dist) * force * 18;
-                n.y += (dy / dist) * force * 18;
-                if (Math.random() < 0.025) {
-                    spawnParticles(n.x, n.y, this.hue, 1);
+                let dx = n.x - handX;
+                let dy = n.y - handY;
+                let dist = Math.hypot(dx, dy);
+
+                const interactionRadius = 65;
+                if (dist < interactionRadius && dist > 0.001) { 
+                    let force = (interactionRadius - dist) / interactionRadius;
+                    // 力的疊加：如果兩隻手都在拉，這裡會執行兩次，產生合力
+                    n.x += (dx / dist) * force * 20;
+                    n.y += (dy / dist) * force * 20;
+                    
+                    if (Math.random() < 0.025) {
+                        spawnParticles(n.x, n.y, this.hue, 1);
+                    }
                 }
             }
         }
+
         for (let k = 0; k < 5; k++) {
             for (let i = 0; i < this.nodes.length - 1; i++) {
                 let n1 = this.nodes[i], n2 = this.nodes[i + 1];
+                if (n1.breakTimer > 0) continue;
+
                 let dx = n2.x - n1.x, dy = n2.y - n1.y;
                 let dist = Math.hypot(dx, dy);
                 if (dist < 0.001) continue;
+
+                if (k === 0 && dist > this.segmentLength * BREAK_THRESHOLD_MULTIPLIER) {
+                    n1.breakTimer = HEAL_TIME_FRAMES; 
+                    spawnParticles((n1.x + n2.x)/2, (n1.y + n2.y)/2, this.hue, 10);
+                    continue; 
+                }
+
                 let diff = (dist - this.segmentLength) / dist;
                 if (!n1.pinned) { n1.x += dx * 0.5 * diff; n1.y += dy * 0.5 * diff; }
                 n2.x -= dx * 0.5 * diff; n2.y -= dy * 0.5 * diff;
@@ -167,12 +183,23 @@ class Strand {
     }
 
     draw() {
-        ctx.beginPath();
         ctx.strokeStyle = this.color;
         ctx.lineWidth = 2.0; 
+        
+        ctx.beginPath();
         ctx.moveTo(this.nodes[0].x, this.nodes[0].y);
-        for (let i = 1; i < this.nodes.length; i++) {
-            ctx.lineTo(this.nodes[i].x, this.nodes[i].y);
+
+        for (let i = 0; i < this.nodes.length - 1; i++) {
+            let n1 = this.nodes[i];
+            let n2 = this.nodes[i + 1];
+
+            if (n1.breakTimer > 0) {
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(n2.x, n2.y);
+            } else {
+                ctx.lineTo(n2.x, n2.y);
+            }
         }
         ctx.stroke();
     }
@@ -221,22 +248,37 @@ function initStrands() {
 function spawnParticles(x, y, hue, amount) {
     for (let i = 0; i < amount; i++) {
         let ang = Math.random() * Math.PI * 2;
-        let spd = randomRange(1.0, 3.5); 
-        particles.push(new Particle(x, y, Math.cos(ang)*spd, Math.sin(ang)*spd, randomRange(20, 40), randomRange(2, 3.5), hue));
+        let spd = randomRange(1.0, 5.0); 
+        particles.push(new Particle(x, y, Math.cos(ang)*spd, Math.sin(ang)*spd, randomRange(20, 40), randomRange(2, 4.5), hue));
     }
 }
 
 const videoElement = document.getElementById('input_video');
 const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+
+// --- 修改重點：maxNumHands: 2 ---
+hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+
 hands.onResults((results) => {
     loadingDiv.style.display = 'none';
+    
+    // 先假設所有手都沒偵測到
+    for(let h=0; h<MAX_HANDS; h++) {
+        handTrackers[h].active = false;
+    }
+
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        isHandDetected = true;
-        const indexTip = results.multiHandLandmarks[0][8];
-        targetMouse.x = (1 - indexTip.x) * width;
-        targetMouse.y = indexTip.y * height;
-    } else { isHandDetected = false; }
+        // 遍歷所有偵測到的手 (最多2隻)
+        results.multiHandLandmarks.forEach((landmarks, index) => {
+            if (index < MAX_HANDS) {
+                const tracker = handTrackers[index];
+                tracker.active = true;
+                const indexTip = landmarks[8];
+                tracker.target.x = (1 - indexTip.x) * width;
+                tracker.target.y = indexTip.y * height;
+            }
+        });
+    }
 });
 
 const camera = new Camera(videoElement, { onFrame: async () => { await hands.send({image: videoElement}); }, width: 640, height: 480 });
@@ -247,14 +289,26 @@ function animate() {
     ctx.fillStyle = 'rgba(2, 1, 5, 0.3)'; 
     ctx.fillRect(0, 0, width, height);
 
-    if (isHandDetected) {
-        currentMouse.x += (targetMouse.x - currentMouse.x) * SMOOTHING_FACTOR;
-        currentMouse.y += (targetMouse.y - currentMouse.y) * SMOOTHING_FACTOR;
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.beginPath();
-        ctx.arc(currentMouse.x, currentMouse.y, 8, 0, Math.PI * 2);
-        ctx.fill();
+    // --- 修改重點：更新並繪製多隻手 ---
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    
+    for(let h=0; h<MAX_HANDS; h++) {
+        let tracker = handTrackers[h];
+        if (tracker.active) {
+            // 平滑移動
+            tracker.current.x += (tracker.target.x - tracker.current.x) * SMOOTHING_FACTOR;
+            tracker.current.y += (tracker.target.y - tracker.current.y) * SMOOTHING_FACTOR;
+
+            // 繪製手部光點
+            ctx.beginPath();
+            ctx.arc(tracker.current.x, tracker.current.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            // 如果手移開了，重置 current 位置以免下次進來時瞬移
+            tracker.current.x = tracker.target.x;
+            tracker.current.y = tracker.target.y;
+        }
     }
 
     ctx.globalCompositeOperation = 'source-over'; 
